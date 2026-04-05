@@ -170,7 +170,7 @@ export default function Home() {
       return R * c;
     };
       return (
-        <div className="min-h-screen p-6 bg-gradient-to-br from-blue-50 via-white to-gray-100">
+        <div className="min-h-screen p-6 bg-gradient-to-br from-blue-500 via-white to-gray-100">
 
       {/* 🔝 NAVBAR */}
       <div className="bg-white px-8 py-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between mb-8">
