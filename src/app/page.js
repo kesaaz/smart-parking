@@ -1,13 +1,11 @@
 "use client";
-
+import { ref, onValue, off } from "firebase/database";
+import { rtdb } from "@/lib/firebase";
 import { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebase";
 import {
-  collection,
-  getDocs,
   doc,
-  updateDoc,
-  onSnapshot
+  updateDoc
 } from "firebase/firestore";
 import {
   onAuthStateChanged,
@@ -16,83 +14,135 @@ import {
 import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const [parkings, setParkings] = useState([]);
+  ////* MOCK DATA - REPLACE WITH FIREBASE REAL-TIME DATA*///
+  const [parkings, setParkings] = useState([
+  {
+    id: "1",
+    name: "Inorbit Mall",
+    lat: 19.065,
+    lng: 73.000,
+    slots: [
+      { id: "Slot 1", status: "Occupied" },
+      { id: "Slot 2", status: "Empty" },
+      { id: "Slot 3", status: "Empty" },
+      { id: "Slot 4", status: "Empty" },
+    ],
+  },
+  {
+    id: "2",
+    name: "INOX, Vashi",
+    lat: 19.070,
+    lng: 73.010,
+    slots: [
+      { id: "Slot 1", status: "Occupied" },
+      { id: "Slot 2", status: "Occupied" },
+      { id: "Slot 3", status: "Occupied" },
+      { id: "Slot 4", status: "Occupied" },
+    ],
+  },
+  {
+    id: "3",
+    name: "Vashi Railway Station",
+    lat: 19.068,
+    lng: 73.020,
+    slots: [
+      { id: "Slot 1", status: "Empty" },
+      { id: "Slot 2", status: "Empty" },
+      { id: "Slot 3", status: "Occupied" },
+      { id: "Slot 4", status: "Empty" },
+    ],
+  },
+  {
+    id: "4",
+    name: "Copper Chimney",
+    lat: 19.060,
+    lng: 73.015,
+    slots: [
+      { id: "Slot 1", status: "Empty" },
+      { id: "Slot 2", status: "Empty" },
+      { id: "Slot 3", status: "Empty" },
+      { id: "Slot 4", status: "Occupied" },
+    ],
+  },
+]);
   const [user, setUser] = useState(null);
   const router = useRouter();
   const [search, setSearch] = useState("");
   console.log("ALL PARKINGS:", parkings);
+  const [loading, setLoading] = useState(true);
 
-  // 🔐 AUTH LISTENER (single clean one)
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        router.push("/login");
-      } else {
-        setUser(currentUser);
-      }
-    });
+ // 🔐 AUTH LISTENER
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    if (!currentUser) {
+      router.push("/login");
+    } else {
+      setUser(currentUser);
+    }
+    setLoading(false);
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
 
-  // 📡 REAL-TIME PARKING DATA
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "parking_locations"),
-      async (snapshot) => {
-        const parkingData = [];
+// 📡 REAL-TIME PARKING DATA
+useEffect(() => {
+  const slotRef = ref(rtdb, "slots/location1");
 
-        for (let docSnap of snapshot.docs) {
-          const parking = { id: docSnap.id, ...docSnap.data() };
+  const unsubscribe = onValue(slotRef, (snapshot) => {
+    const data = snapshot.val();
 
-          const slotsSnapshot = await getDocs(
-            collection(db, "parking_locations", docSnap.id, "slots")
-          );
+    console.log("🔥 Realtime Data:", data);
 
-          // 🔥 AUTO RELEASE LOGIC
-          parking.slots = await Promise.all(
-            slotsSnapshot.docs.map(async (slot) => {
-              const data = slot.data();
+    if (!data) return;
 
-              if (data.status === "reserved" && data.expiry) {
-                if (Date.now() > data.expiry) {
-                  const slotRef = doc(
-                    db,
-                    "parking_locations",
-                    docSnap.id,
-                    "slots",
-                    slot.id
-                  );
+    setParkings((prevParkings) =>
+      prevParkings.map((parking) => {
+        // 🎯 Only update Copper Chimney
+        if (parking.name !== "Copper Chimney") return parking;
 
-                  await updateDoc(slotRef, {
-                    status: "Empty",
-                    expiry: null,
-                    userId: null
-                  });
+        return {
+          ...parking,
+          slots: parking.slots.map((slot) => {
 
-                  return {
-                    id: slot.id,
-                    status: "Empty"
-                  };
-                }
-              }
+  // SLOT 1
+  if (slot.id.toLowerCase().includes("1")) {
+    return {
+      ...slot,
+      status: data.slot1 === "occupied" ? "occupied" : "Empty",
+    };
+  }
 
-              return {
-                id: slot.id,
-                ...data
-              };
-            })
-          );
+  // SLOT 2
+  if (slot.id.toLowerCase().includes("2")) {
+    return {
+      ...slot,
+      status: data.slot2 === "occupied" ? "occupied" : "Empty",
+    };
+  }
 
-          parkingData.push(parking);
-        }
-
-        setParkings(parkingData);
-      }
+  return slot;
+}),
+        };
+      })
     );
+  });
 
-    return () => unsubscribe();
-  }, []);
+  return () => off(slotRef);
+}, []);
+// ✅ AFTER ALL HOOKS → CONDITIONS
+
+if (loading) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-gray-500">Loading...</p>
+    </div>
+  );
+}
+
+if (!user) {
+  return null;
+}
 
   // 🚗 BOOK SLOT
   const bookSlot = async (parkingId, slotId) => {
@@ -174,6 +224,7 @@ export default function Home() {
 
       {/* 🔝 NAVBAR */}
       <div className="bg-white px-8 py-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between mb-8">
+      {/*<div className="px-8 py-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between mb-8"></div>*/}
 
   {/* LEFT - LOGO */}
   <h1 className="text-2xl font-semibold text-blue-600 tracking-tight">
