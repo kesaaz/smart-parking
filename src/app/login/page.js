@@ -34,7 +34,7 @@ export default function AuthPage() {
       }
       router.push("/");
     } catch (err) {
-      // 🔥 Better error handling
+      //  Better error handling
       if (err.code === "auth/user-not-found") {
         alert("No account found. Please sign up first.");
       } else if (err.code === "auth/wrong-password") {

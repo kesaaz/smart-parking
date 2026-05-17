@@ -1,17 +1,14 @@
 "use client";
-import { ref, onValue, off } from "firebase/database";
+import { ref, onValue, off, set } from "firebase/database";
 import { rtdb } from "@/lib/firebase";
 import { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebase";
-import {
-  doc,
-  updateDoc
-} from "firebase/firestore";
 import {
   onAuthStateChanged,
   signOut
 } from "firebase/auth";
 import { useRouter } from "next/navigation";
+
 
 export default function Home() {
   ////* MOCK DATA - REPLACE WITH FIREBASE REAL-TIME DATA*///
@@ -59,8 +56,8 @@ export default function Home() {
     lng: 73.015,
     slots: [
       { id: "Slot 1", status: "Empty" },
-      { id: "Slot 2", status: "Empty" },
-      { id: "Slot 3", status: "Empty" },
+      { id: "Slot 2", status: "Occupied" },
+      { id: "Slot 3", status: "Occupied" },
       { id: "Slot 4", status: "Occupied" },
     ],
   },
@@ -92,37 +89,55 @@ useEffect(() => {
   const unsubscribe = onValue(slotRef, (snapshot) => {
     const data = snapshot.val();
 
-    console.log("🔥 Realtime Data:", data);
+    console.log(" Realtime Data:", data);
 
     if (!data) return;
 
     setParkings((prevParkings) =>
       prevParkings.map((parking) => {
-        // 🎯 Only update Copper Chimney
+        //  Only update Copper Chimney
         if (parking.name !== "Copper Chimney") return parking;
 
         return {
           ...parking,
           slots: parking.slots.map((slot) => {
 
-  // SLOT 1
-  if (slot.id.toLowerCase().includes("1")) {
-    return {
-      ...slot,
-      status: data.slot1 === "occupied" ? "occupied" : "Empty",
-    };
-  }
+            //  NEW LOGIC STARTS HERE
+            const slotKey = slot.id.toLowerCase().replace(" ", "");
+            const slotData = data[slotKey];
 
-  // SLOT 2
-  if (slot.id.toLowerCase().includes("2")) {
-    return {
-      ...slot,
-      status: data.slot2 === "occupied" ? "occupied" : "Empty",
-    };
-  }
+            if (!slotData) return slot;
 
-  return slot;
-}),
+            //  CASE 1: Sensor (string)
+            if (typeof slotData === "string") {
+              return {
+                ...slot,
+                status: slotData === "occupied" ? "occupied" : "Empty",
+              };
+            }
+
+            //  CASE 2: Booking (object)
+            const now = Date.now();
+
+            if (slotData.expiry && now > slotData.expiry) {
+              return {
+                ...slot,
+                status: "Empty",
+              };
+            }
+
+            return {
+              ...slot,
+              status:
+                slotData.status === "reserved"
+                  ? "reserved"
+                  : slotData.status === "occupied"
+                  ? "occupied"
+                  : "Empty",
+            };
+            //  NEW LOGIC ENDS HERE
+
+          }),
         };
       })
     );
@@ -144,25 +159,32 @@ if (!user) {
   return null;
 }
 
-  // 🚗 BOOK SLOT
-  const bookSlot = async (parkingId, slotId) => {
-    if (!user) {
-      alert("Please login first!");
-      return;
-    }
+  //  BOOK SLOT
+const bookSlot = async (parkingId, slotId) => {
+  if (!user) {
+    alert("Please login first!");
+    return;
+  }
 
-    const slotRef = doc(db, "parking_locations", parkingId, "slots", slotId);
+  try {
+    const slotKey = slotId.toLowerCase().replace(" ", "");
+    const expiryTime = Date.now() + 2 * 60 * 1000; // 5 minutes
 
-    const expiryTime = Date.now() + 5 * 60 * 1000;
+    const slotRef = ref(rtdb, `slots/location1/${slotKey}`);
 
-    await updateDoc(slotRef, {
+    await set(slotRef, {
       status: "reserved",
+      userId: user.uid,
       expiry: expiryTime,
-      userId: user.uid
     });
-  };
 
-  // 🔓 LOGOUT
+    console.log("✅ Slot reserved for 5 mins");
+  } catch (error) {
+    console.error("Booking error:", error);
+  }
+};
+
+  //  LOGOUT
   const handleLogout = async () => {
     await signOut(auth);
     router.push("/login");
@@ -278,7 +300,7 @@ if (!user) {
       {/* Not Available” UI */}
       {search && filteredParkings.length === 0 && (
         <div className="text-xl text-center text-gray-600 mt-6">
-          ❌ Location not available yet
+          Location not available yet
         </div>
       )}
       {/* 🚗 PARKING GRID */}
@@ -340,7 +362,7 @@ if (!user) {
 
                   {slot.userId === user?.uid && slot.status !== "Empty" && (
                     <p className="text-xs mt-2 bg-white text-blue-700 px-2 py-1 rounded inline-block font-semibold">
-                      Yours
+                      Booked by you
                     </p>
                   )}
                 </div>
